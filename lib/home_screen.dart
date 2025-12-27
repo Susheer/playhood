@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:playhood/player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -151,7 +152,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       isPlaying ? Icons.pause : Icons.play_arrow,
                     ),
                     onPressed: () {
-                      _playSong(song, index);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => PlayerScreen(song: song),
+                        ),
+                      );
+                      //_playSong(song, index);
                     },
                   ),
                 );
