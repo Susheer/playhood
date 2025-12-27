@@ -16,6 +16,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   bool _isPlaying = false;
+  double _speed = 1.0; // default tempo
 
   @override
   void initState() {
@@ -111,6 +112,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       _player.play();
                     }
                   },
+                ),
+                const SizedBox(height: 30),
+                // Tempo / Speed slider
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Playback Speed: ${_speed.toStringAsFixed(1)}x'),
+                    Slider(
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 15, // 0.5, 0.6, ..., 2.0
+                      value: _speed,
+                      onChanged: (value) {
+                        setState(() {
+                          _speed = value;
+                          _player.setSpeed(_speed);
+                        });
+                      },
+                    ),
+                  ],
                 ),
               ],
             ),
