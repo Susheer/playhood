@@ -9,14 +9,44 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final AudioPlayer _player = AudioPlayer();
+  bool isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    await _player.setAsset('assets/sample.mp3');
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  void _togglePlay() {
+    if (isPlaying) {
+      _player.pause();
+    } else {
+      _player.play();
+    }
+    setState(() {
+      isPlaying = !isPlaying;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Playhood')),
-      body: const Center(
-        child: Text(
-          'Welcome to Playhood 🎧',
-          style: TextStyle(fontSize: 22),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: _togglePlay,
+          child: Text(isPlaying ? 'Pause' : 'Play'),
         ),
       ),
     );
