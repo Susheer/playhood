@@ -3,7 +3,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:playhood/player_screen.dart';
-import 'audio_manager.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,8 +13,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
+  final AudioPlayer _player = AudioPlayer(); // Single instance for the whole app
   List<SongModel> _songs = [];
   bool _loading = false;
+  int? _playingIndex;
 
   @override
   void initState() {
@@ -25,10 +26,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     // Listen for when audio finishes
-    AudioManager.instance.player.playerStateStream.listen((state) {
+    _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         setState(() {
-          AudioManager.instance.currentIndex = null;
+          _playingIndex = null;
         });
       }
     });
@@ -61,21 +62,6 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = false);
   }
 
-  Future<void> _playSong(SongModel song, int index) async {
-    final player = AudioManager.instance.player;
-
-    if (AudioManager.instance.currentIndex == index && player.playing) {
-      await player.pause();
-      AudioManager.instance.currentIndex = null;
-    } else {
-      await player.setFilePath(song.data);
-      player.play();
-      AudioManager.instance.currentIndex = index;
-    }
-
-    setState(() {});
-  }
-
   Future<void> pickAudioFiles() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       type: FileType.audio,
@@ -84,26 +70,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (result != null) {
       List<String> paths = result.paths.whereType<String>().toList();
+      print('Selected files: $paths');
       if (paths.isNotEmpty) {
-        final player = AudioManager.instance.player;
-        await player.setFilePath(paths[0]);
-        player.play();
-        AudioManager.instance.currentIndex = null;
-        setState(() {});
+        await _player.setFilePath(paths[0]);
+        _player.play();
       }
     }
   }
 
   @override
   void dispose() {
-    AudioManager.instance.player.dispose();
+    _player.dispose(); // Dispose on app close
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentIndex = AudioManager.instance.currentIndex;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Playhood')),
       body: Column(
@@ -131,20 +113,29 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _songs.length,
               itemBuilder: (context, index) {
                 final song = _songs[index];
-                final isPlaying = index == currentIndex;
+                final isPlaying = index == _playingIndex;
 
                 return ListTile(
-                  title: Text(song.title),
-                  subtitle: Text(song.artist ?? 'Unknown Artist'),
+                  title: Text(
+                    song.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    song.artist ?? 'Unknown Artist',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   trailing: IconButton(
                     icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                     onPressed: () {
-                      _playSong(song, index);
-                      // Navigate to player screen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => PlayerScreen(song: song),
+                          builder: (_) => PlayerScreen(
+                            song: song,
+                            player: _player, // Pass the shared player
+                          ),
                         ),
                       );
                     },
