@@ -1,68 +1,45 @@
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:playhood/audio_controller.dart';
+import 'package:just_audio/just_audio.dart';
 
 class PlayerScreen extends StatefulWidget {
   final SongModel song;
-  final AudioPlayer player;
-  final Duration loopStart;
-  final Duration loopEnd;
-  final bool isLooping;
-
-  const PlayerScreen({
-    super.key,
-    required this.song,
-    required this.player,
-    required this.loopStart,
-    required this.loopEnd,
-    required this.isLooping,
-  });
+  const PlayerScreen({super.key, required this.song});
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late AudioPlayer _player;
-  late bool _isLooping;
-  late Duration _loopStart;
-  late Duration _loopEnd;
-
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  final AudioController _controller = AudioController();
   double _speed = 1.0;
+  Duration _loopStart = Duration.zero;
+  Duration _loopEnd = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _player = widget.player;
-    _isLooping = widget.isLooping;
-    _loopStart = widget.loopStart;
-    _loopEnd = widget.loopEnd;
+    if (_controller.currentSong?.id != widget.song.id) {
+      _controller.setSong(widget.song);
+    }
 
-    _duration = _player.duration ?? Duration.zero;
-
-    _player.positionStream.listen((pos) {
-      setState(() => _position = pos);
-      if (_isLooping && pos >= _loopEnd) {
-        _player.seek(_loopStart);
-      }
-    });
-
-    _player.playerStateStream.listen((state) {
-      setState(() {
-        _duration = _player.duration ?? Duration.zero;
-      });
-    });
+    _controller.onStateChanged = () {
+      setState(() {});
+    };
   }
 
-  String _formatDuration(Duration d) {
+  String _format(Duration d) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    return '${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds.remainder(60))}';
+    return "${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds.remainder(60))}";
   }
 
   @override
   Widget build(BuildContext context) {
+    final player = _controller.player;
+    final duration = player.duration ?? Duration.zero;
+    final position = player.position;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Now Playing')),
       body: Padding(
@@ -74,18 +51,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
             const SizedBox(height: 20),
             Slider(
               min: 0,
-              max: _duration.inMilliseconds.toDouble(),
-              value: _position.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
-              onChanged: (value) {
-                _player.seek(Duration(milliseconds: value.toInt()));
-              },
+              max: duration.inMilliseconds.toDouble(),
+              value: position.inMilliseconds.clamp(0, duration.inMilliseconds).toDouble(),
+              onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(_formatDuration(_position)),
-                Text(_formatDuration(_duration)),
-              ],
+              children: [Text(_format(position)), Text(_format(duration))],
             ),
             const SizedBox(height: 20),
             Row(
@@ -93,82 +65,74 @@ class _PlayerScreenState extends State<PlayerScreen> {
               children: [
                 IconButton(
                   iconSize: 64,
-                  icon: Icon(_player.playing ? Icons.pause_circle : Icons.play_circle),
-                  onPressed: () {
-                    if (_player.playing) {
-                      _player.pause();
-                    } else {
-                      _player.play();
-                    }
+                  icon: Icon(player.playing ? Icons.pause_circle : Icons.play_circle),
+                  onPressed: () => _controller.playPause(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Column(
+              children: [
+                Text('Playback Speed: ${_speed.toStringAsFixed(1)}x'),
+                Slider(
+                  min: 0.5,
+                  max: 2.0,
+                  divisions: 15,
+                  value: _speed,
+                  onChanged: (v) {
+                    setState(() {
+                      _speed = v;
+                      _controller.setSpeed(_speed);
+                    });
                   },
                 ),
               ],
             ),
             const SizedBox(height: 20),
-            Text('Loop Segment'),
-            Row(
+            // Loop Controls
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Start:'),
-                Expanded(
-                  child: Slider(
-                    min: 0,
-                    max: _duration.inMilliseconds.toDouble(),
-                    value: _loopStart.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
-                    onChanged: (value) {
-                      setState(() => _loopStart = Duration(milliseconds: value.toInt()));
-                    },
-                  ),
+                const Text('Loop Segment'),
+                Row(
+                  children: [
+                    Text('Start: ${_format(_loopStart)}'),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () => _loopStart = player.position,
+                      child: const Text('Set Start'),
+                    ),
+                  ],
                 ),
-                Text(_formatDuration(_loopStart)),
-              ],
-            ),
-            Row(
-              children: [
-                const Text('End:'),
-                Expanded(
-                  child: Slider(
-                    min: 0,
-                    max: _duration.inMilliseconds.toDouble(),
-                    value: _loopEnd.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
-                    onChanged: (value) {
-                      setState(() => _loopEnd = Duration(milliseconds: value.toInt()));
-                    },
-                  ),
+                Row(
+                  children: [
+                    Text('End: ${_format(_loopEnd)}'),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () => _loopEnd = player.position,
+                      child: const Text('Set End'),
+                    ),
+                  ],
                 ),
-                Text(_formatDuration(_loopEnd)),
-              ],
-            ),
-            Row(
-              children: [
-                const Text('Speed:'),
-                Expanded(
-                  child: Slider(
-                    min: 0.5,
-                    max: 2.0,
-                    divisions: 15,
-                    value: _speed,
-                    onChanged: (value) {
-                      setState(() {
-                        _speed = value;
-                        _player.setSpeed(_speed);
-                      });
-                    },
-                  ),
-                ),
-                Text('${_speed.toStringAsFixed(1)}x'),
-              ],
-            ),
-            Row(
-              children: [
-                const Text('Looping:'),
-                Switch(
-                  value: _isLooping,
-                  onChanged: (val) {
-                    setState(() => _isLooping = val);
-                  },
+                Row(
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        _controller.setLoop(_loopStart, _loopEnd);
+                      },
+                      child: const Text('Enable Loop'),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        _controller.clearLoop();
+                      },
+                      child: const Text('Clear Loop'),
+                    ),
+                  ],
                 ),
               ],
-            ),
+            )
           ],
         ),
       ),
