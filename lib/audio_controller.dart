@@ -1,71 +1,79 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
-class AudioController {
-  AudioController._privateConstructor();
-
-  static final AudioController _instance = AudioController._privateConstructor();
-
-  factory AudioController() {
-    return _instance;
-  }
-
+class AudioController extends ChangeNotifier {
   final AudioPlayer player = AudioPlayer();
+
   SongModel? currentSong;
-  bool loopSegment = false;
-  Duration loopStart = Duration.zero;
-  Duration loopEnd = Duration.zero;
 
-  // Callbacks for UI updates
-  Function()? onStateChanged;
+  // Loop segment
+  Duration? loopStart;
+  Duration? loopEnd;
+  bool loopEnabled = false;
 
-  void setSong(SongModel song) async {
-    currentSong = song;
-    await player.setFilePath(song.data);
-    player.play();
-    _listenLoop();
-    _notify();
+  Timer? _loopTimer;
+
+  bool get isPlaying => player.playing;
+
+  AudioController() {
+    player.positionStream.listen(_handleLoop);
   }
 
-  void playPause() {
-    if (player.playing) {
-      player.pause();
-    } else {
-      player.play();
+  Future<void> playSong(SongModel song) async {
+    if (currentSong?.id != song.id) {
+      currentSong = song;
+      await player.setFilePath(song.data);
     }
-    _notify();
+    await player.play();
+    notifyListeners();
   }
 
-  void seek(Duration position) {
-    player.seek(position);
-    _notify();
+  Future<void> togglePlayPause() async {
+    if (player.playing) {
+      await player.pause();
+    } else {
+      await player.play();
+    }
+    notifyListeners();
   }
 
-  void setSpeed(double speed) {
-    player.setSpeed(speed);
-    _notify();
+  void setLoopStart(Duration d) {
+    loopStart = d;
+    notifyListeners();
   }
 
-  void setLoop(Duration start, Duration end) {
-    loopStart = start;
-    loopEnd = end;
-    loopSegment = true;
+  void setLoopEnd(Duration d) {
+    loopEnd = d;
+    notifyListeners();
+  }
+
+  void toggleLoop() {
+    loopEnabled = !loopEnabled;
+    notifyListeners();
   }
 
   void clearLoop() {
-    loopSegment = false;
+    loopStart = null;
+    loopEnd = null;
+    loopEnabled = false;
+    notifyListeners();
   }
 
-  void _listenLoop() {
-    player.positionStream.listen((pos) {
-      if (loopSegment && pos >= loopEnd) {
-        player.seek(loopStart);
-      }
-      _notify();
-    });
+  void _handleLoop(Duration position) {
+    if (!loopEnabled || loopStart == null || loopEnd == null) return;
+    if (position >= loopEnd!) {
+      player.seek(loopStart);
+    }
   }
 
-  void _notify() {
-    if (onStateChanged != null) onStateChanged!();
+  @override
+  void dispose() {
+    _loopTimer?.cancel();
+    player.dispose();
+    super.dispose();
   }
 }
+
+final audioController = AudioController();

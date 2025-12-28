@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:playhood/audio_controller.dart';
-import 'package:playhood/player_screen.dart';
+import 'audio_controller.dart';
+import 'player_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,7 +12,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final AudioController _controller = AudioController();
   List<SongModel> _songs = [];
   bool _loading = false;
 
@@ -22,140 +19,82 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _requestPermission();
+    audioController.addListener(_onAudioChanged);
+  }
 
-    _controller.onStateChanged = () {
-      setState(() {});
-    };
+  void _onAudioChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _requestPermission() async {
-    bool granted = await _audioQuery.permissionsRequest();
-    if (!granted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Permission denied')),
-      );
-    }
+    await _audioQuery.permissionsRequest();
   }
 
   Future<void> _loadSongs() async {
     setState(() => _loading = true);
-    try {
-      _songs = await _audioQuery.querySongs(sortType: SongSortType.TITLE);
-    } catch (e) {
-      print('Error loading songs: $e');
-    }
+    _songs = await _audioQuery.querySongs();
     setState(() => _loading = false);
-  }
-
-  Future<void> pickAudioFiles() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.audio,
-      allowMultiple: true,
-    );
-
-    if (result != null) {
-      List<String> paths = result.paths.whereType<String>().toList();
-      if (paths.isNotEmpty) {
-        // Play first selected file
-        _controller.player.setFilePath(paths[0]);
-        _controller.player.play();
-        setState(() {});
-      }
-    }
-  }
-
-  Widget miniPlayer() {
-    if (_controller.currentSong == null) return const SizedBox.shrink();
-    return Container(
-      color: Colors.grey[200],
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              _controller.currentSong!.title,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          IconButton(
-            icon: Icon(_controller.player.playing ? Icons.pause : Icons.play_arrow),
-            onPressed: () {
-              _controller.playPause();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.open_in_full),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PlayerScreen(song: _controller.currentSong!),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   void dispose() {
-    _controller.player.dispose();
+    audioController.removeListener(_onAudioChanged);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentSong = audioController.currentSong;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Playhood')),
       body: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ElevatedButton(
-                onPressed: _loadSongs,
-                child: const Text('Load Audio Files'),
-              ),
-              ElevatedButton(
-                onPressed: pickAudioFiles,
-                child: const Text('Pick Audio File'),
-              ),
-            ],
+          ElevatedButton(
+            onPressed: _loadSongs,
+            child: const Text('Load Songs'),
           ),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
+          if (_loading) const CircularProgressIndicator(),
           Expanded(
             child: ListView.builder(
               itemCount: _songs.length,
               itemBuilder: (context, index) {
                 final song = _songs[index];
-                final isPlaying = _controller.currentSong?.id == song.id;
+                final isCurrent = currentSong?.id == song.id;
+                final isPlaying = isCurrent && audioController.isPlaying;
 
                 return ListTile(
-                  title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(song.artist ?? 'Unknown Artist', maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(
-                    icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                    onPressed: () {
-                      _controller.setSong(song);
-                    },
+                  title: Text(song.title, maxLines: 1),
+                  subtitle: Text(song.artist ?? 'Unknown'),
+                  trailing: Icon(
+                    isPlaying ? Icons.pause : Icons.play_arrow,
                   ),
                   onTap: () {
+                    audioController.playSong(song);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => PlayerScreen(song: song)),
+                      MaterialPageRoute(
+                        builder: (_) => PlayerScreen(song: song),
+                      ),
                     );
                   },
                 );
               },
             ),
           ),
-          miniPlayer(),
+
+          // Mini Player
+          if (currentSong != null)
+            Container(
+              color: Colors.deepPurple.shade100,
+              child: ListTile(
+                title: Text(currentSong.title, maxLines: 1),
+                trailing: IconButton(
+                  icon: Icon(audioController.isPlaying ? Icons.pause : Icons.play_arrow),
+                  onPressed: audioController.togglePlayPause,
+                ),
+              ),
+            ),
         ],
       ),
     );
