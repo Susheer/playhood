@@ -55,8 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       _songs = await _audioQuery.querySongs(
         sortType: SongSortType.TITLE,
-        orderType: OrderType.ASC_OR_SMALLER,
-        uriType: UriType.EXTERNAL,
       );
       print('Loaded ${_songs.length} songs');
     } catch (e) {
