@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:playhood/player_screen.dart';
+import 'audio_manager.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,10 +14,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final AudioPlayer _player = AudioPlayer();
   List<SongModel> _songs = [];
   bool _loading = false;
-  int? _playingIndex;
 
   @override
   void initState() {
@@ -26,10 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     // Listen for when audio finishes
-    _player.playerStateStream.listen((state) {
+    AudioManager.instance.player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         setState(() {
-          _playingIndex = null;
+          AudioManager.instance.currentIndex = null;
         });
       }
     });
@@ -53,9 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
 
     try {
-      _songs = await _audioQuery.querySongs(
-        sortType: SongSortType.TITLE,
-      );
+      _songs = await _audioQuery.querySongs(sortType: SongSortType.TITLE);
       print('Loaded ${_songs.length} songs');
     } catch (e) {
       print('Error loading songs: $e');
@@ -65,14 +62,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _playSong(SongModel song, int index) async {
-    if (_playingIndex == index && _player.playing) {
-      await _player.pause();
-      setState(() => _playingIndex = null);
+    final player = AudioManager.instance.player;
+
+    if (AudioManager.instance.currentIndex == index && player.playing) {
+      await player.pause();
+      AudioManager.instance.currentIndex = null;
     } else {
-      await _player.setFilePath(song.data);
-      _player.play();
-      setState(() => _playingIndex = index);
+      await player.setFilePath(song.data);
+      player.play();
+      AudioManager.instance.currentIndex = index;
     }
+
+    setState(() {});
   }
 
   Future<void> pickAudioFiles() async {
@@ -83,28 +84,26 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (result != null) {
       List<String> paths = result.paths.whereType<String>().toList();
-      print('Selected files: $paths');
-      // Optional: play first selected file
       if (paths.isNotEmpty) {
-        playFile(paths[0]);
+        final player = AudioManager.instance.player;
+        await player.setFilePath(paths[0]);
+        player.play();
+        AudioManager.instance.currentIndex = null;
+        setState(() {});
       }
     }
   }
 
-  Future<void> playFile(String path) async {
-    await _player.setFilePath(path);
-    _player.play();
-    setState(() => _playingIndex = null); // It's external file, not in _songs list
-  }
-
   @override
   void dispose() {
-    _player.dispose();
+    AudioManager.instance.player.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = AudioManager.instance.currentIndex;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Playhood')),
       body: Column(
@@ -132,31 +131,22 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _songs.length,
               itemBuilder: (context, index) {
                 final song = _songs[index];
-                final isPlaying = index == _playingIndex;
+                final isPlaying = index == currentIndex;
 
                 return ListTile(
-                  title: Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    song.artist ?? 'Unknown Artist',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  title: Text(song.title),
+                  subtitle: Text(song.artist ?? 'Unknown Artist'),
                   trailing: IconButton(
-                    icon: Icon(
-                      isPlaying ? Icons.pause : Icons.play_arrow,
-                    ),
+                    icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                     onPressed: () {
+                      _playSong(song, index);
+                      // Navigate to player screen
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => PlayerScreen(song: song),
                         ),
                       );
-                      //_playSong(song, index);
                     },
                   ),
                 );

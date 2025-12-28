@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'audio_manager.dart';
 
 class PlayerScreen extends StatefulWidget {
   final SongModel song;
@@ -12,41 +13,24 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final AudioPlayer _player = AudioPlayer();
-  Duration _duration = Duration.zero;
+  final AudioPlayer _player = AudioManager.instance.player;
   Duration _position = Duration.zero;
   bool _isPlaying = false;
-  double _speed = 1.0; // default tempo
+  double _speed = 1.0;
 
   @override
   void initState() {
     super.initState();
-    _initPlayer();
-  }
 
-  Future<void> _initPlayer() async {
-    try {
-      await _player.setFilePath(widget.song.data);
-      _duration = _player.duration ?? Duration.zero;
+    _player.positionStream.listen((pos) {
+      setState(() => _position = pos);
+    });
 
-      _player.positionStream.listen((pos) {
-        setState(() {
-          _position = pos;
-        });
+    _player.playerStateStream.listen((state) {
+      setState(() {
+        _isPlaying = state.playing;
       });
-
-      _player.playerStateStream.listen((state) {
-        setState(() {
-          _isPlaying = state.playing;
-          if (state.processingState == ProcessingState.completed) {
-            _player.seek(Duration.zero);
-            _player.pause();
-          }
-        });
-      });
-    } catch (e) {
-      print('Error loading audio: $e');
-    }
+    });
   }
 
   String _formatDuration(Duration d) {
@@ -57,13 +41,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final duration = _player.duration ?? Duration.zero;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Now Playing')),
       body: Padding(
@@ -71,31 +51,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              widget.song.title,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.song.artist ?? 'Unknown Artist',
-              style: const TextStyle(fontSize: 16),
-            ),
+            Text(widget.song.title, style: const TextStyle(fontSize: 24)),
+            Text(widget.song.artist ?? 'Unknown Artist'),
             const SizedBox(height: 40),
             Slider(
               min: 0,
-              max: _duration.inMilliseconds.toDouble(),
-              value: _position.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
-              onChanged: (value) {
-                final pos = Duration(milliseconds: value.toInt());
-                _player.seek(pos);
-              },
+              max: duration.inMilliseconds.toDouble(),
+              value: _position.inMilliseconds.clamp(0, duration.inMilliseconds).toDouble(),
+              onChanged: (value) => _player.seek(Duration(milliseconds: value.toInt())),
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(_formatDuration(_position)),
-                Text(_formatDuration(_duration)),
+                Text(_formatDuration(duration)),
               ],
             ),
             const SizedBox(height: 40),
@@ -113,16 +82,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     }
                   },
                 ),
-                const SizedBox(height: 30),
-                // Tempo / Speed slider
+                const SizedBox(width: 20),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Playback Speed: ${_speed.toStringAsFixed(1)}x'),
+                    Text('Speed: ${_speed.toStringAsFixed(1)}x'),
                     Slider(
                       min: 0.5,
                       max: 2.0,
-                      divisions: 15, // 0.5, 0.6, ..., 2.0
+                      divisions: 15,
                       value: _speed,
                       onChanged: (value) {
                         setState(() {
