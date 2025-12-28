@@ -13,25 +13,36 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final AudioPlayer _player = AudioPlayer(); // Single instance for the whole app
+  final AudioPlayer _player = AudioPlayer(); // shared player
   List<SongModel> _songs = [];
   bool _loading = false;
   int? _playingIndex;
 
+  // Looping
+  bool _isLooping = false;
+  Duration _loopStart = Duration.zero;
+  Duration _loopEnd = Duration.zero;
+
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _requestPermission();
+    _requestPermission();
+
+    // Listen to position for mini-looping
+    _player.positionStream.listen((pos) {
+      setState(() => _position = pos);
+      if (_isLooping && pos >= _loopEnd) {
+        _player.seek(_loopStart);
+      }
     });
 
-    // Listen for when audio finishes
     _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        setState(() {
-          _playingIndex = null;
-        });
-      }
+      setState(() {
+        _duration = _player.duration ?? Duration.zero;
+      });
     });
   }
 
@@ -53,13 +64,27 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _loading = true);
 
     try {
-      _songs = await _audioQuery.querySongs(sortType: SongSortType.TITLE);
-      print('Loaded ${_songs.length} songs');
+      _songs = await _audioQuery.querySongs(
+        sortType: SongSortType.TITLE,
+      );
     } catch (e) {
       print('Error loading songs: $e');
     }
 
     setState(() => _loading = false);
+  }
+
+  Future<void> _playSong(SongModel song, int index) async {
+    if (_playingIndex == index && _player.playing) {
+      await _player.pause();
+    } else {
+      await _player.setFilePath(song.data);
+      _player.play();
+      _playingIndex = index;
+      _loopStart = Duration.zero;
+      _loopEnd = _player.duration ?? Duration.zero;
+    }
+    setState(() {});
   }
 
   Future<void> pickAudioFiles() async {
@@ -70,17 +95,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (result != null) {
       List<String> paths = result.paths.whereType<String>().toList();
-      print('Selected files: $paths');
       if (paths.isNotEmpty) {
         await _player.setFilePath(paths[0]);
         _player.play();
+        _playingIndex = null; // external file
+        _loopStart = Duration.zero;
+        _loopEnd = _player.duration ?? Duration.zero;
+        setState(() {});
       }
     }
   }
 
+  void _toggleLoop() {
+    setState(() => _isLooping = !_isLooping);
+    if (_isLooping) _player.seek(_loopStart);
+  }
+
+  String _formatDuration(Duration d) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    return '${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds.remainder(60))}';
+  }
+
   @override
   void dispose() {
-    _player.dispose(); // Dispose on app close
+    _player.dispose();
     super.dispose();
   }
 
@@ -116,34 +154,63 @@ class _HomeScreenState extends State<HomeScreen> {
                 final isPlaying = index == _playingIndex;
 
                 return ListTile(
-                  title: Text(
-                    song.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    song.artist ?? 'Unknown Artist',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  title: Text(song.title),
+                  subtitle: Text(song.artist ?? 'Unknown Artist'),
                   trailing: IconButton(
                     icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PlayerScreen(
-                            song: song,
-                            player: _player, // Pass the shared player
-                          ),
-                        ),
-                      );
-                    },
+                    onPressed: () => _playSong(song, index),
                   ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlayerScreen(
+                          song: song,
+                          player: _player,
+                          loopStart: _loopStart,
+                          loopEnd: _loopEnd,
+                          isLooping: _isLooping,
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),
           ),
+
+          // MINI PLAYER
+          if (_player.playing || _playingIndex != null)
+            Container(
+              color: Colors.grey[200],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _playingIndex != null ? _songs[_playingIndex!].title : 'External File',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(_player.playing ? Icons.pause : Icons.play_arrow),
+                    onPressed: () {
+                      if (_player.playing) {
+                        _player.pause();
+                      } else {
+                        _player.play();
+                      }
+                      setState(() {});
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(_isLooping ? Icons.repeat_one : Icons.repeat),
+                    onPressed: _toggleLoop,
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

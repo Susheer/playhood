@@ -4,9 +4,19 @@ import 'package:on_audio_query/on_audio_query.dart';
 
 class PlayerScreen extends StatefulWidget {
   final SongModel song;
-  final AudioPlayer player; // Shared player from HomeScreen
+  final AudioPlayer player;
+  final Duration loopStart;
+  final Duration loopEnd;
+  final bool isLooping;
 
-  const PlayerScreen({super.key, required this.song, required this.player});
+  const PlayerScreen({
+    super.key,
+    required this.song,
+    required this.player,
+    required this.loopStart,
+    required this.loopEnd,
+    required this.isLooping,
+  });
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -14,65 +24,41 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   late AudioPlayer _player;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-  bool _isPlaying = false;
-  double _speed = 1.0;
+  late bool _isLooping;
+  late Duration _loopStart;
+  late Duration _loopEnd;
 
-  // Segment loop range
-  Duration? _loopStart;
-  Duration? _loopEnd;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  double _speed = 1.0;
 
   @override
   void initState() {
     super.initState();
     _player = widget.player;
-    _initPlayer();
-  }
+    _isLooping = widget.isLooping;
+    _loopStart = widget.loopStart;
+    _loopEnd = widget.loopEnd;
 
-  Future<void> _initPlayer() async {
-    try {
-      await _player.setFilePath(widget.song.data);
-      _duration = _player.duration ?? Duration.zero;
+    _duration = _player.duration ?? Duration.zero;
 
-      _player.positionStream.listen((pos) {
-        setState(() {
-          _position = pos;
+    _player.positionStream.listen((pos) {
+      setState(() => _position = pos);
+      if (_isLooping && pos >= _loopEnd) {
+        _player.seek(_loopStart);
+      }
+    });
 
-          // Segment loop logic
-          if (_loopStart != null && _loopEnd != null && pos >= _loopEnd!) {
-            _player.seek(_loopStart);
-          }
-        });
+    _player.playerStateStream.listen((state) {
+      setState(() {
+        _duration = _player.duration ?? Duration.zero;
       });
-
-      _player.playerStateStream.listen((state) {
-        setState(() {
-          _isPlaying = state.playing;
-          if (state.processingState == ProcessingState.completed) {
-            _player.seek(Duration.zero);
-            _player.pause();
-          }
-        });
-      });
-
-      _player.play();
-    } catch (e) {
-      print('Error loading audio: $e');
-    }
+    });
   }
 
   String _formatDuration(Duration d) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(d.inMinutes.remainder(60));
-    final seconds = twoDigits(d.inSeconds.remainder(60));
-    return '$minutes:$seconds';
-  }
-
-  @override
-  void dispose() {
-    // Do not dispose shared player
-    super.dispose();
+    return '${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds.remainder(60))}';
   }
 
   @override
@@ -82,61 +68,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(widget.song.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-            const SizedBox(height: 8),
+            Text(widget.song.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
             Text(widget.song.artist ?? 'Unknown Artist'),
-            const SizedBox(height: 20),
-            // Segment loop sliders
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      const Text('Loop Start'),
-                      Slider(
-                        min: 0,
-                        max: _duration.inMilliseconds.toDouble(),
-                        value: (_loopStart?.inMilliseconds ?? 0).clamp(0, _duration.inMilliseconds).toDouble(),
-                        onChanged: (value) {
-                          setState(() {
-                            _loopStart = Duration(milliseconds: value.toInt());
-                          });
-                        },
-                      ),
-                      Text(_loopStart != null ? _formatDuration(_loopStart!) : '0:00'),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      const Text('Loop End'),
-                      Slider(
-                        min: 0,
-                        max: _duration.inMilliseconds.toDouble(),
-                        value: (_loopEnd?.inMilliseconds ?? _duration.inMilliseconds).clamp(0, _duration.inMilliseconds).toDouble(),
-                        onChanged: (value) {
-                          setState(() {
-                            _loopEnd = Duration(milliseconds: value.toInt());
-                          });
-                        },
-                      ),
-                      Text(_loopEnd != null ? _formatDuration(_loopEnd!) : _formatDuration(_duration)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 20),
             Slider(
               min: 0,
               max: _duration.inMilliseconds.toDouble(),
               value: _position.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
               onChanged: (value) {
-                final pos = Duration(milliseconds: value.toInt());
-                _player.seek(pos);
+                _player.seek(Duration(milliseconds: value.toInt()));
               },
             ),
             Row(
@@ -152,33 +93,79 @@ class _PlayerScreenState extends State<PlayerScreen> {
               children: [
                 IconButton(
                   iconSize: 64,
-                  icon: Icon(_isPlaying ? Icons.pause_circle : Icons.play_circle),
+                  icon: Icon(_player.playing ? Icons.pause_circle : Icons.play_circle),
                   onPressed: () {
-                    if (_isPlaying) {
+                    if (_player.playing) {
                       _player.pause();
                     } else {
                       _player.play();
                     }
                   },
                 ),
-                const SizedBox(width: 30),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Speed: ${_speed.toStringAsFixed(1)}x'),
-                    Slider(
-                      min: 0.5,
-                      max: 2.0,
-                      divisions: 15,
-                      value: _speed,
-                      onChanged: (value) {
-                        setState(() {
-                          _speed = value;
-                          _player.setSpeed(_speed);
-                        });
-                      },
-                    ),
-                  ],
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text('Loop Segment'),
+            Row(
+              children: [
+                const Text('Start:'),
+                Expanded(
+                  child: Slider(
+                    min: 0,
+                    max: _duration.inMilliseconds.toDouble(),
+                    value: _loopStart.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
+                    onChanged: (value) {
+                      setState(() => _loopStart = Duration(milliseconds: value.toInt()));
+                    },
+                  ),
+                ),
+                Text(_formatDuration(_loopStart)),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('End:'),
+                Expanded(
+                  child: Slider(
+                    min: 0,
+                    max: _duration.inMilliseconds.toDouble(),
+                    value: _loopEnd.inMilliseconds.clamp(0, _duration.inMilliseconds).toDouble(),
+                    onChanged: (value) {
+                      setState(() => _loopEnd = Duration(milliseconds: value.toInt()));
+                    },
+                  ),
+                ),
+                Text(_formatDuration(_loopEnd)),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('Speed:'),
+                Expanded(
+                  child: Slider(
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 15,
+                    value: _speed,
+                    onChanged: (value) {
+                      setState(() {
+                        _speed = value;
+                        _player.setSpeed(_speed);
+                      });
+                    },
+                  ),
+                ),
+                Text('${_speed.toStringAsFixed(1)}x'),
+              ],
+            ),
+            Row(
+              children: [
+                const Text('Looping:'),
+                Switch(
+                  value: _isLooping,
+                  onChanged: (val) {
+                    setState(() => _isLooping = val);
+                  },
                 ),
               ],
             ),
